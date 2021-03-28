@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>BsonDb</title>
+
+    <style>
+        html,
+        body {
+            /* margin: 0; */
+            /* padding: 0; */
+        }
+
+        .drop {
+            padding: 10px;
+            display: flex;
+            text-align: center;
+            border: 1px dashed black;
+        }
+
+        .output {
+            width: 100%;
+            height: 60vh;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div>
+        <h1>Convert your bson files to readable json</h1>
+        <input class="drop" accept=".bson,application/bson" type="file" multiple onchange="parse(event)" />
+        <br>
+        <!-- <pre id="jsonoutput"></pre> -->
+        <div id="stats"></div>
+        <textarea class="output" id="jsonoutput"></textarea>
+    </div>
+
+    <script type="module">
+        import BSON from "https://cdn.jsdelivr.net/npm/bson@4.2.3/dist/bson.browser.esm.js"
+
+        function _getNextObjectSize(buffer) {
+            // this is how BSON 
+            return buffer[0] | (buffer[1] << 8) | (buffer[2] << 16) | (buffer[3] << 24);
+        }
+
+        function deserializeAll(buffer, options) {
+            let _buffer = buffer;
+            let _result = [];
+
+            while (_buffer.length > 0) {
+                let nextSize = _getNextObjectSize(_buffer);
+                if (_buffer.length < nextSize) {
+                    throw new Error("Corrupted BSON file: the last object is incomplete.");
+                }
+                else if (_buffer[nextSize - 1] !== 0) {
+                    throw new Error(`Corrupted BSON file: the ${_result.length + 1}-th object does not end with 0.`);
+                }
+
+                let obj = BSON.deserialize(_buffer, {
+                    ...options,
+                    allowObjectSmallerThanBufferSize: true,
+                    promoteBuffers: true // Since BSON support raw buffer as data type, this config allows
+                    // these buffers as is, which is valid in JS object but not in JSON
+                });
+                _result.push(obj);
+                _buffer = _buffer.slice(nextSize);
+            }
+
+            return _result;
+        }
+
+
+        window.parse = function parse(event) {
+            const db = {}
+
+            const files = Array.from(event.target.files)
+            files.forEach(file => {
+
+                var reader = new FileReader();
+                reader.onload = function (event) {
+                    // Create array for binary input
+                    var uintArray = new Uint8Array(event.target.result);
+
+                    // Deserialize it
+                    const documents = deserializeAll(uintArray)
+
+                    // Modify HTML content
+                    // document.getElementById("jsonoutput").innerHTML = JSON.stringify(documents, null, 4);
+                    const name = file.name.replace(/\.[^/.]+$/, "")
+                    db[name] = documents
+                };
+                reader.readAsArrayBuffer(file);
+            })
+
+
+            // TODO Improve
+            setTimeout(() => {
+                document.getElementById("jsonoutput").innerHTML = JSON.stringify(db, null, 4);
+            },1000)
+        }
+    </script>
+</body>
+
+</html>
